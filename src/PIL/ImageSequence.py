@@ -16,11 +16,12 @@
 ##
 from __future__ import annotations
 
-from . import Image
-
 TYPE_CHECKING = False
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from typing import Self
+
+    from . import Image
 
 
 class Iterator:
@@ -40,7 +41,7 @@ class Iterator:
             msg = "im must have seek method"
             raise AttributeError(msg)
         self.im = im
-        self.position = getattr(self.im, "_min_frame", 0)
+        self.position = 0
 
     def __getitem__(self, ix: int) -> Image.Image:
         try:
@@ -50,7 +51,7 @@ class Iterator:
             msg = "end of sequence"
             raise IndexError(msg) from e
 
-    def __iter__(self) -> Iterator:
+    def __iter__(self) -> Self:
         return self
 
     def __next__(self) -> Image.Image:
@@ -81,8 +82,8 @@ def all_frames(
     ims = []
     for imSequence in im:
         current = imSequence.tell()
-
-        ims += [im_frame.copy() for im_frame in Iterator(imSequence)]
-
-        imSequence.seek(current)
+        try:
+            ims += [im_frame.copy() for im_frame in Iterator(imSequence)]
+        finally:
+            imSequence.seek(current)
     return [func(im) for im in ims] if func else ims

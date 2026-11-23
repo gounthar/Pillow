@@ -35,7 +35,6 @@ class _Enhance:
                        lower factors mean less color (brightness, contrast,
                        etc), and higher values more. There are no restrictions
                        on this value.
-        :rtype: :py:class:`~PIL.Image.Image`
         """
         return Image.blend(self.degenerate, self.image, factor)
 
@@ -51,12 +50,13 @@ class Color(_Enhance):
 
     def __init__(self, image: Image.Image) -> None:
         self.image = image
-        self.intermediate_mode = "L"
-        if "A" in image.getbands():
-            self.intermediate_mode = "LA"
+        if image.mode.startswith("I;16"):
+            self.intermediate_mode = image.mode
+        else:
+            self.intermediate_mode = "LA" if "A" in image.getbands() else "L"
 
-        if self.intermediate_mode != image.mode:
-            image = image.convert(self.intermediate_mode).convert(image.mode)
+            if self.intermediate_mode != image.mode:
+                image = image.convert(self.intermediate_mode).convert(image.mode)
         self.degenerate = image
 
 
@@ -70,15 +70,24 @@ class Contrast(_Enhance):
 
     def __init__(self, image: Image.Image) -> None:
         self.image = image
-        if image.mode != "L":
-            image = image.convert("L")
-        mean = int(ImageStat.Stat(image).mean[0] + 0.5)
-        self.degenerate = Image.new("L", image.size, mean)
-        if self.degenerate.mode != self.image.mode:
-            self.degenerate = self.degenerate.convert(self.image.mode)
+        if image.mode.startswith("I;16"):
+            if 0 in image.size:
+                mean = 0
+            else:
+                pixel = image.resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))
+                assert isinstance(pixel, (int, float))
+                mean = round(pixel)
+            self.degenerate = Image.new(image.mode, image.size, mean)
+        else:
+            if image.mode != "L":
+                image = image.convert("L")
+            mean = int(ImageStat.Stat(image).mean[0] + 0.5)
+            self.degenerate = Image.new("L", image.size, mean)
+            if self.degenerate.mode != self.image.mode:
+                self.degenerate = self.degenerate.convert(self.image.mode)
 
-        if "A" in self.image.getbands():
-            self.degenerate.putalpha(self.image.getchannel("A"))
+            if "A" in self.image.getbands():
+                self.degenerate.putalpha(self.image.getchannel("A"))
 
 
 class Brightness(_Enhance):

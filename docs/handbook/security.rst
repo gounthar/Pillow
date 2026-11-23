@@ -162,6 +162,26 @@ PNG (many text chunks) can exhaust CPU or memory before pixel data is decoded.
 *Mitigations:* restrict accepted formats to the minimum required; enforce a
 file-size limit before passing data to Pillow; use per-request timeouts.
 
+**D-4 — Memory use of image operations**
+
+:py:data:`PIL.Image.MAX_IMAGE_PIXELS` limits the size of a single decoded
+image. It is not a memory budget for a process. Most image operations, such as
+:py:meth:`~PIL.Image.Image.copy`, :py:meth:`~PIL.Image.Image.convert`,
+:py:meth:`~PIL.Image.Image.getchannel`, :py:meth:`~PIL.Image.Image.split` and
+:py:meth:`~PIL.Image.Image.resize`, return a new image and allocate memory
+proportional to its size, in addition to the source image. Peak memory therefore
+grows with the number of images held at once, the number of intermediate
+images in a processing pipeline, and the number of requests processed
+concurrently. Pillow does not track or limit memory across operations or
+threads. Reports of memory exhaustion that depend on holding many large images
+at once are not considered vulnerabilities in Pillow.
+
+*Mitigations:* bound the number of concurrent image processing tasks; set
+OS/container memory limits per worker; release images you no longer need, for
+example with :py:meth:`~PIL.Image.Image.close` or a ``with`` block; set a
+practical dimension ceiling below ``MAX_IMAGE_PIXELS`` that reflects your
+memory budget.
+
 Elevation of privilege
 ^^^^^^^^^^^^^^^^^^^^^^
 
@@ -257,3 +277,65 @@ If you cannot use GitHub, use the `Tidelift security contact
 disclosure.
 
 **Do not report sensitive vulnerability information in public.**
+
+What to include and how to structure a vulnerability report
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* For the initial report and follow-up communications, avoid overly
+  long, verbose, or excessive structure (such as headers or tables).
+  Reports should be a few sentences describing the vulnerability.
+  Ideally include a proof-of-concept script that reproduces the issue
+  and provides a clear indication of whether the vulnerability is still
+  present (such as exiting with ``1`` if vulnerable and ``0`` if not
+  vulnerable).
+
+* When reporting large numbers or "batches" of vulnerabilities, or
+  searching for potential vulnerabilities using an LLM, you as a
+  reporter must verify the factual validity (such as whether APIs have
+  been hallucinated) of the content in all reports prior to submission.
+
+* Check published `security advisories
+  <https://github.com/python-pillow/Pillow/security/advisories>`__ and the
+  `issue tracker <https://github.com/python-pillow/Pillow/issues>`__ for an
+  existing report before submitting. Advisories still under triage are not
+  public, so not every report will be visible to you.
+
+* Validate the issue against the :ref:`threat model <security-threat-model>`
+  and state which category it falls under. Behaviour already documented
+  as an accepted risk is not a vulnerability and will be closed.
+
+* When submitting a batch, deduplicate within it, report one issue per
+  distinct defect rather than one per trigger, and note any relationships
+  between your reports. Large batches may be triaged as a batch rather
+  than individually, and may take longer to process.
+
+* Ideally, include a minimal patch with the mitigation for the report.
+
+* Always include the Pillow versions that were tested, and indicate which
+  were found to be vulnerable. For issues in C code, also include the
+  versions of the relevant bundled libraries, such as libjpeg, libtiff or
+  libwebp.
+
+* Prefer a script that generates any input files over attaching them. If a
+  file must be attached, use the smallest one that reproduces the issue.
+
+* Proof-of-concept scripts longer than a few lines should be wrapped with a
+  collapsed section using ``<details></details>`` for better readability.
+
+* Ensure that your issue is reproducible in ``main``. We only
+  support the latest version. The one exception -- if your issue is
+  exploitable in the latest public release, but not in ``main``, and the
+  pull request does not mention a security implication this may be an
+  unknown security issue that was inadvertently fixed.
+
+* Demonstrating a memory overflow is enough. Do not weaponize
+  the reproducer to do remote code execution.
+
+* Do not report unexpected Python exceptions as a DoS or a
+  memory safety bug.  An issue that raises a Python exception in a
+  library is unlikely to be considered a security issue. This may or
+  may not be an ordinary bug depending on the context.
+
+* Reports that do not contain a potential security vulnerability (such as
+  spam or requesting compliance or due-diligence work) will be discarded
+  without a reply.

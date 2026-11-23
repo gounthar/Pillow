@@ -19,6 +19,7 @@ function check_cibw_archs {
 # potential cross-build platforms before native platforms to ensure that we pick
 # up the cross environment.
 PROJECTDIR=$(pwd)
+PATCH_DIR=$(pwd)/patches
 if [[ "$CIBW_PLATFORM" == "ios" ]]; then
     check_cibw_archs
     # On iOS, CIBW_ARCHS is actually a multi-arch - arm64_iphoneos,
@@ -91,7 +92,7 @@ ARCHIVE_SDIR=pillow-depends-main
 
 VERSIONS_FILE="$PROJECTDIR/.github/dependencies.json"
 _get_ver() { python3 -c "import json; print(json.load(open('$VERSIONS_FILE'))['$1'])"; }
-FREETYPE_VERSION=$(_get_ver freetype)
+FREETYPE_VERSION=$(_get_ver freetype | tr - .)
 HARFBUZZ_VERSION=$(_get_ver harfbuzz)
 LIBPNG_VERSION=$(_get_ver libpng)
 JPEGTURBO_VERSION=$(_get_ver jpegturbo)
@@ -143,7 +144,18 @@ function build_zlib_ng {
     ORIGINAL_HOST_CONFIGURE_FLAGS=$HOST_CONFIGURE_FLAGS
     unset HOST_CONFIGURE_FLAGS
 
-    build_github zlib-ng/zlib-ng $ZLIB_NG_VERSION --installnamedir=$BUILD_PREFIX/lib --zlib-compat
+    if [[ -n "$IS_MACOS" ]]; then
+        build_github zlib-ng/zlib-ng $ZLIB_NG_VERSION --installnamedir=$BUILD_PREFIX/lib --zlib-compat
+    else
+        # auditwheel does not bundle libz.so.1, so link zlib-ng statically,
+        # with hidden symbols so a system zlib cannot take its place.
+        CFLAGS="$CFLAGS -fPIC -fvisibility=hidden" build_github zlib-ng/zlib-ng $ZLIB_NG_VERSION --static --zlib-compat
+        # The shared install used to run ldconfig, which later steps rely on
+        # to find libraries in /usr/local/lib. musl has no cache.
+        if [[ -z "$IS_ALPINE" ]]; then
+            ldconfig
+        fi
+    fi
 
     HOST_CONFIGURE_FLAGS=$ORIGINAL_HOST_CONFIGURE_FLAGS
     touch zlib-stamp
@@ -176,7 +188,7 @@ function build_libavif {
     python3 -m pip install meson ninja
 
     if ([[ "$PLAT" == "x86_64" ]] && [[ -z "$IOS_SDK" ]]) || [ -n "$SANITIZER" ]; then
-        build_simple nasm 2.16.03 https://www.nasm.us/pub/nasm/releasebuilds/2.16.03
+        build_simple nasm 3.02 https://www.nasm.us/pub/nasm/releasebuilds/3.02
     fi
 
     local build_shared=ON
@@ -241,7 +253,7 @@ function build_libavif {
 
 function build_zstd {
     if [ -e zstd-stamp ]; then return; fi
-    local out_dir=$(fetch_unpack https://github.com/facebook/zstd/releases/download/v$ZSTD_VERSION/zstd-$ZSTD_VERSION.tar.gz)
+    local out_dir=$(fetch_unpack https://github.com/meta/zstd/releases/download/v$ZSTD_VERSION/zstd-$ZSTD_VERSION.tar.gz)
     (cd $out_dir \
         && make -j4 install)
     touch zstd-stamp
@@ -268,15 +280,33 @@ function build {
     fi
     build_simple libxcb $LIBXCB_VERSION https://www.x.org/releases/individual/lib
 
-    build_libjpeg_turbo
+    # -DCMAKE_POSITION_INDEPENDENT_CODE=1 is a workaround from https://github.com/libjpeg-turbo/libjpeg-turbo/issues/898
+    HOST_CMAKE_FLAGS="-DCMAKE_POSITION_INDEPENDENT_CODE=1 $HOST_CMAKE_FLAGS" build_libjpeg_turbo
+
     if [[ -n "$IS_MACOS" ]]; then
         # Custom tiff build to include jpeg; by default, configure won't include
         # headers/libs in the custom macOS/iOS prefix. Explicitly disable webp,
         # libdeflate and zstd, because on x86_64 macs, it will pick up the
         # Homebrew versions of those libraries from /usr/local.
+        tiff_configure_args=(
+            --disable-contrib
+            --disable-cxx
+            --disable-dependency-tracking
+            --disable-docs
+            --disable-libdeflate
+            --disable-tests
+            --disable-tools
+            --disable-webp
+            --disable-zstd
+            --with-jpeg-include-dir=$BUILD_PREFIX/include
+            --with-jpeg-lib-dir=$BUILD_PREFIX/lib
+        )
+        if [[ -z "$IOS_SDK" ]]; then
+            # iOS links libtiff statically, but otherwise we need the dylib.
+            tiff_configure_args+=(--disable-static)
+        fi
         build_simple tiff $TIFF_VERSION https://download.osgeo.org/libtiff tar.gz \
-            --with-jpeg-include-dir=$BUILD_PREFIX/include --with-jpeg-lib-dir=$BUILD_PREFIX/lib \
-            --disable-webp --disable-libdeflate --disable-zstd
+            "${tiff_configure_args[@]}"
     else
         build_zstd
         build_tiff
@@ -301,17 +331,19 @@ function build {
 
     build_brotli
 
-    if [[ -n "$IS_MACOS" ]]; then
-        # Custom freetype build
-        build_simple freetype $FREETYPE_VERSION https://download.savannah.gnu.org/releases/freetype tar.gz --with-harfbuzz=no
-    else
-        build_freetype
-    fi
+    # FreeType and HarfBuzz each want the other:
+    # HarfBuzz reads font data through FreeType, and FreeType's auto-hinter asks HarfBuzz which glyphs a script covers.
+    # Break the cycle by building FreeType twice, so that the FreeType we ship is linked against the HarfBuzz we ship.
+    build_freetype
 
     if [[ -z "$IOS_SDK" ]]; then
         # On iOS, there's no vendor-provided raqm, and we can't ship it due to
         # licensing, so there's no point building harfbuzz.
         build_harfbuzz
+
+        # Now that HarfBuzz exists, build FreeType again against it.
+        rm -rf freetype-$FREETYPE_VERSION freetype-stamp
+        CFLAGS="$CFLAGS -DFT_CONFIG_OPTION_USE_HARFBUZZ" build_freetype
     fi
 }
 

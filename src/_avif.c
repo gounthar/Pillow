@@ -1,7 +1,7 @@
 #define PY_SSIZE_T_CLEAN
 
 #include <Python.h>
-#include "avif/avif.h"
+#include <avif/avif.h>
 
 // Encoder type
 typedef struct {
@@ -85,11 +85,15 @@ irot_imir_to_exif_orientation(const avifImage *image) {
     return 1;  // Default orientation ("top-left", no-op).
 }
 
+/**
+ * Map EXIF orientation to irot and imir boxes.
+ *
+ * EXIF orientations are defined in JEITA CP-3451C section 4.6.4.A Orientation.
+ * irot and imir boxes are defined in HEIF ISO/IEC 28002-12:2021 sections 6.5.10
+ * and 6.5.12.
+ */
 static void
 exif_orientation_to_irot_imir(avifImage *image, int orientation) {
-    // Mapping from Exif orientation as defined in JEITA CP-3451C section 4.6.4.A
-    // Orientation to irot and imir boxes as defined in HEIF ISO/IEC 28002-12:2021
-    // sections 6.5.10 and 6.5.12.
     switch (orientation) {
         case 2:  // The 0th row is at the visual top of the image, and the 0th column is
                  // the visual right-hand side.
@@ -505,6 +509,10 @@ _encoder_add(AvifEncoderObject *self, PyObject *args) {
 
     if (strcmp(mode, "RGBA") == 0) {
         rgb.format = AVIF_RGB_FORMAT_RGBA;
+#if AVIF_VERSION >= 1030000  // 1.3.0
+    } else if (strcmp(mode, "L") == 0) {
+        rgb.format = AVIF_RGB_FORMAT_GRAY;
+#endif
     } else {
         rgb.format = AVIF_RGB_FORMAT_RGB;
     }
@@ -581,7 +589,7 @@ end:
 }
 
 PyObject *
-_encoder_finish(AvifEncoderObject *self) {
+_encoder_finish(AvifEncoderObject *self, PyObject *args) {
     avifEncoder *encoder = self->encoder;
 
     avifRWData raw = AVIF_DATA_EMPTY;
@@ -697,7 +705,7 @@ _decoder_dealloc(AvifDecoderObject *self) {
 }
 
 PyObject *
-_decoder_get_info(AvifDecoderObject *self) {
+_decoder_get_info(AvifDecoderObject *self, PyObject *args) {
     avifDecoder *decoder = self->decoder;
     avifImage *image = decoder->image;
 
@@ -705,6 +713,17 @@ _decoder_get_info(AvifDecoderObject *self) {
     PyObject *exif = NULL;
     PyObject *xmp = NULL;
     PyObject *ret = NULL;
+
+    char *mode;
+    if (decoder->alphaPresent) {
+        mode = "RGBA";
+#if AVIF_VERSION >= 1030000  // 1.3.0
+    } else if (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV400) {
+        mode = "L";
+#endif
+    } else {
+        mode = "RGB";
+    }
 
     if (image->xmp.size) {
         xmp = PyBytes_FromStringAndSize((const char *)image->xmp.data, image->xmp.size);
@@ -736,7 +755,7 @@ _decoder_get_info(AvifDecoderObject *self) {
         image->width,
         image->height,
         decoder->imageCount,
-        decoder->alphaPresent ? "RGBA" : "RGB",
+        mode,
         NULL == icc ? Py_None : icc,
         NULL == exif ? Py_None : exif,
         irot_imir_to_exif_orientation(image),
@@ -767,7 +786,9 @@ _decoder_get_frame(AvifDecoderObject *self, PyObject *args) {
         return NULL;
     }
 
+    Py_BEGIN_ALLOW_THREADS;
     result = avifDecoderNthImage(decoder, frame_index);
+    Py_END_ALLOW_THREADS;
     if (result != AVIF_RESULT_OK) {
         PyErr_Format(
             exc_type_for_avif_result(result),
@@ -783,7 +804,15 @@ _decoder_get_frame(AvifDecoderObject *self, PyObject *args) {
     avifRGBImageSetDefaults(&rgb, image);
 
     rgb.depth = 8;
-    rgb.format = decoder->alphaPresent ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
+    if (decoder->alphaPresent) {
+        rgb.format = AVIF_RGB_FORMAT_RGBA;
+#if AVIF_VERSION >= 1030000  // 1.3.0
+    } else if (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV400) {
+        rgb.format = AVIF_RGB_FORMAT_GRAY;
+#endif
+    } else {
+        rgb.format = AVIF_RGB_FORMAT_RGB;
+    }
 
     result = avifRGBImageAllocatePixels(&rgb);
     if (result != AVIF_RESULT_OK) {
@@ -891,8 +920,11 @@ setup_module(PyObject *m) {
 
     PyObject *d = PyModule_GetDict(m);
     PyObject *v = PyUnicode_FromString(avifVersion());
-    PyDict_SetItemString(d, "libavif_version", v ? v : Py_None);
-    Py_XDECREF(v);
+    if (!v) {
+        return -1;
+    }
+    PyDict_SetItemString(d, "libavif_version", v);
+    Py_DECREF(v);
 
     return 0;
 }

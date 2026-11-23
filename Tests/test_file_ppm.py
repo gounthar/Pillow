@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import sys
 from io import BytesIO, TextIOWrapper
-from pathlib import Path
 
 import pytest
 
-from PIL import Image, PpmImagePlugin
+from PIL import Image, ImageFile, PpmImagePlugin
 
 from .helper import (
     assert_image_equal,
@@ -14,6 +13,10 @@ from .helper import (
     assert_image_similar,
     hopper,
 )
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # sample ppm stream
 TEST_FILE = "Tests/images/hopper.ppm"
@@ -59,8 +62,10 @@ def test_sanity() -> None:
         ),
         # P6 with maxval > 255
         (
-            b"P6 3 1 257 \x00\x00\x00\x01\x00\x02"
-            b"\x00\x80\x00\x81\x00\x82\x01\x00\x01\x01\xff\xff",
+            (
+                b"P6 3 1 257 \x00\x00\x00\x01\x00\x02"
+                b"\x00\x80\x00\x81\x00\x82\x01\x00\x01\x01\xff\xff"
+            ),
             "RGB",
             (
                 (0, 1, 2),
@@ -218,6 +223,14 @@ def test_plain_data_with_comment(
         assert_image_equal_tofile(im, path2)
 
 
+def test_plain_comment_ends_at_block_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ImageFile, "SAFEBLOCK", 16)
+    comment = b"#" + b"x" * 15  # The line end starts the next read
+    with Image.open(BytesIO(b"P2\n2 1\n255\n" + comment + b"\n1\r2")) as im:
+        assert im.getpixel((0, 0)) == 1
+        assert im.getpixel((1, 0)) == 2
+
+
 @pytest.mark.parametrize("data", (b"P1\n128 128\n", b"P3\n128 128\n255\n"))
 def test_plain_truncated_data(tmp_path: Path, data: bytes) -> None:
     path = tmp_path / "temp.ppm"
@@ -338,6 +351,25 @@ def test_not_enough_image_data(tmp_path: Path) -> None:
     with Image.open(path) as im:
         with pytest.raises(ValueError):
             im.load()
+
+
+def test_truncated_raw_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with open("Tests/images/hopper_8bit.pgm", "rb") as f:
+        data = f.read()[:-1]
+    path = tmp_path / "temp.pgm"
+    with open(path, "wb") as f:
+        f.write(data)
+
+    # Opening by filename tries mmap first,
+    # and then falls back to the decoder on error
+    with Image.open(path) as im:
+        with pytest.raises(OSError, match="image file is truncated"):
+            im.load()
+
+    monkeypatch.setattr(ImageFile, "LOAD_TRUNCATED_IMAGES", True)
+    with Image.open(path) as im:
+        with Image.open(BytesIO(data)) as expected:
+            assert_image_equal(im, expected)
 
 
 @pytest.mark.parametrize("maxval", (b"0", b"65536"))

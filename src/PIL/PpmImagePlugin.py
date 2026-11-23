@@ -15,13 +15,18 @@
 #
 from __future__ import annotations
 
+__lazy_modules__ = {"PIL._binary", "math"}
+
 import math
-from typing import IO
 
 from . import Image, ImageFile
 from ._binary import i16be as i16
 from ._binary import o8
 from ._binary import o32le as o32
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import IO
 
 #
 # --------------------------------------------------------------------
@@ -151,9 +156,7 @@ class PpmImageFile(ImageFile.ImageFile):
                     decoder_name = "ppm"
 
             args = rawmode if decoder_name == "raw" else (rawmode, maxval)
-        self.tile = [
-            ImageFile._Tile(decoder_name, (0, 0) + self.size, self.fp.tell(), args)
-        ]
+        self.tile = [ImageFile._Tile(decoder_name, None, self.fp.tell(), args)]
 
 
 #
@@ -172,7 +175,8 @@ class PpmPlainDecoder(ImageFile.PyDecoder):
     def _find_comment_end(self, block: bytes, start: int = 0) -> int:
         a = block.find(b"\n", start)
         b = block.find(b"\r", start)
-        return min(a, b) if a * b > 0 else max(a, b)  # lowest nonnegative index (or -1)
+        # lowest nonnegative index (or -1)
+        return max(a, b) if -1 in {a, b} else min(a, b)
 
     def _ignore_comments(self, block: bytes) -> bytes:
         if self._comment_spans:
@@ -246,7 +250,7 @@ class PpmPlainDecoder(ImageFile.PyDecoder):
             block = self._read_block()  # read next block
             if not block:
                 if half_token:
-                    block = bytearray(b" ")  # flush half_token
+                    block = b" "  # flush half_token
                 else:
                     # eof
                     break
@@ -284,7 +288,7 @@ class PpmPlainDecoder(ImageFile.PyDecoder):
                     break
         return data
 
-    def decode(self, buffer: bytes | Image.SupportsArrayInterface) -> tuple[int, int]:
+    def decode(self, buffer: Image.DecoderInput) -> tuple[int, int]:
         self._comment_spans = False
         if self.mode == "1":
             data = self._decode_bitonal()
@@ -300,7 +304,7 @@ class PpmPlainDecoder(ImageFile.PyDecoder):
 class PpmDecoder(ImageFile.PyDecoder):
     _pulls_fd = True
 
-    def decode(self, buffer: bytes | Image.SupportsArrayInterface) -> tuple[int, int]:
+    def decode(self, buffer: Image.DecoderInput) -> tuple[int, int]:
         assert self.fd is not None
 
         data = bytearray()
@@ -355,9 +359,7 @@ def _save(im: Image.Image, fp: IO[bytes], filename: str | bytes) -> None:
     elif head == b"Pf":
         fp.write(b"-1.0\n")
     row_order = -1 if im.mode == "F" else 1
-    ImageFile._save(
-        im, fp, [ImageFile._Tile("raw", (0, 0) + im.size, 0, (rawmode, 0, row_order))]
-    )
+    ImageFile._save(im, fp, [ImageFile._Tile("raw", args=(rawmode, 0, row_order))])
 
 
 #
