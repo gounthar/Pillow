@@ -15,12 +15,14 @@
 #
 from __future__ import annotations
 
+__lazy_modules__ = {"io", "re"}
+
 import re
 from io import BytesIO
 
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    from typing import IO
+    from typing import IO, Self
 
 
 class GimpPaletteFile:
@@ -44,8 +46,8 @@ class GimpPaletteFile:
             if not s:
                 break
 
-            # skip fields and comment lines
-            if re.match(rb"\w+:|#", s):
+            # skip fields, comment lines and empty lines
+            if re.match(rb"\w+:|#", s) or not s.strip():
                 continue
             if limit and len(s) > 100:
                 msg = "bad palette file"
@@ -66,7 +68,7 @@ class GimpPaletteFile:
         self._read(fp)
 
     @classmethod
-    def frombytes(cls, data: bytes) -> GimpPaletteFile:
+    def frombytes(cls, data: bytes) -> Self:
         self = cls.__new__(cls)
         self._read(BytesIO(data), False)
         return self

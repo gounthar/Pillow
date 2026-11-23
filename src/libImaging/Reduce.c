@@ -1290,17 +1290,17 @@ ImagingReduceNxN_32bpc(
                         INT32 *line0 = (INT32 *)imIn->image32[yy];
                         INT32 *line1 = (INT32 *)imIn->image32[yy + 1];
                         for (xx = xx_from; xx < xx_from + xscale - 1; xx += 2) {
-                            ss += line0[xx + 0] + line0[xx + 1] + line1[xx + 0] +
-                                  line1[xx + 1];
+                            ss += (double)line0[xx + 0] + line0[xx + 1] +
+                                  line1[xx + 0] + line1[xx + 1];
                         }
                         if (xscale & 0x01) {
-                            ss += line0[xx + 0] + line1[xx + 0];
+                            ss += (double)line0[xx + 0] + line1[xx + 0];
                         }
                     }
                     if (yscale & 0x01) {
                         INT32 *line = (INT32 *)imIn->image32[yy];
                         for (xx = xx_from; xx < xx_from + xscale - 1; xx += 2) {
-                            ss += line[xx + 0] + line[xx + 1];
+                            ss += (double)line[xx + 0] + line[xx + 1];
                         }
                         if (xscale & 0x01) {
                             ss += line[xx + 0];
@@ -1452,16 +1452,18 @@ ImagingReduce(Imaging imIn, int xscale, int yscale, int box[4]) {
     ImagingSectionCookie cookie;
     Imaging imOut = NULL;
 
-    if (imIn->mode == IMAGING_MODE_P || imIn->mode == IMAGING_MODE_1) {
+    if (imIn->mode == IMAGING_MODE_P || imIn->mode == IMAGING_MODE_1 ||
+        imIn->type == IMAGING_TYPE_I16) {
         return (Imaging)ImagingError_ModeError();
     }
 
-    if (imIn->type == IMAGING_TYPE_SPECIAL) {
-        return (Imaging)ImagingError_ModeError();
-    }
-
+    /* Round the size up. Dividing before adding avoids overflowing for a
+       large scale.
+     */
     imOut = ImagingNewDirty(
-        imIn->mode, (box[2] + xscale - 1) / xscale, (box[3] + yscale - 1) / yscale
+        imIn->mode,
+        box[2] ? (box[2] - 1) / xscale + 1 : 0,
+        box[3] ? (box[3] - 1) / yscale + 1 : 0
     );
     if (!imOut) {
         return NULL;

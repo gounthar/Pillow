@@ -20,14 +20,14 @@ class TestImageTransform:
         for transform in (
             ImageTransform.AffineTransform((1, 0, 0, 0, 1, 0)),
             ImageTransform.PerspectiveTransform((1, 0, 0, 0, 1, 0, 0, 0)),
-            ImageTransform.ExtentTransform((0, 0) + im.size),
+            ImageTransform.ExtentTransform((0, 0, *im.size)),
             ImageTransform.QuadTransform(
                 (0, 0, 0, im.height, im.width, im.height, im.width, 0)
             ),
             ImageTransform.MeshTransform(
                 [
                     (
-                        (0, 0) + im.size,
+                        (0, 0, *im.size),
                         (0, 0, 0, im.height, im.width, im.height, im.width, 0),
                     )
                 ]
@@ -45,14 +45,13 @@ class TestImageTransform:
             new_im = im.transform((100, 100), transform)
         assert new_im.info["comment"] == comment
 
-    def test_palette(self) -> None:
-        with Image.open("Tests/images/hopper.gif") as im:
-            transformed = im.transform(
-                im.size, Image.Transform.AFFINE, [1, 0, 0, 0, 1, 0]
-            )
-            assert im.palette is not None
-            assert transformed.palette is not None
-            assert im.palette.palette == transformed.palette.palette
+    @pytest.mark.parametrize("mode", ("P", "PA"))
+    def test_palette(self, mode: str) -> None:
+        im = hopper(mode)
+        transformed = im.transform(im.size, Image.Transform.AFFINE, [1, 0, 0, 0, 1, 0])
+        assert im.palette is not None
+        assert transformed.palette is not None
+        assert im.palette.palette == transformed.palette.palette
 
     def test_extent(self) -> None:
         im = hopper("RGB")
@@ -94,7 +93,7 @@ class TestImageTransform:
         (
             ("RGB", (255, 0, 0)),
             ("RGBA", (255, 0, 0, 255)),
-            ("LA", (76, 0)),
+            ("LA", (76, 255)),
         ),
     )
     def test_fill(self, mode: str, expected_pixel: tuple[int, ...]) -> None:
@@ -251,6 +250,18 @@ class TestImageTransform:
         with hopper() as im:
             with pytest.raises(ValueError):
                 im.transform((100, 100), None)  # type: ignore[arg-type]
+
+    def test_invalid_data(self) -> None:
+        with hopper() as im:
+            # Test __transformer data
+            for data in ([math.nan], [math.inf]):
+                with pytest.raises(ValueError, match="invalid data"):
+                    im.transform((100, 100), Image.Transform.EXTENT, data)
+
+            # Test __transformer box
+            for mesh_data in ([[(0, 0, 0, math.nan), []]], [[(0, 0, 0, math.inf), []]]):
+                with pytest.raises(ValueError, match="invalid data"):
+                    im.transform((100, 100), Image.Transform.MESH, mesh_data)
 
     @pytest.mark.parametrize("resample", (Image.Resampling.BOX, "unknown"))
     def test_unknown_resampling_filter(self, resample: Image.Resampling | str) -> None:

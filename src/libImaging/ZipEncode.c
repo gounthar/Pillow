@@ -26,7 +26,8 @@ ImagingZipEncode(Imaging im, ImagingCodecState state, UINT8 *buf, int bytes) {
     int err;
     int compress_level, compress_type;
     UINT8 *ptr;
-    int i, bpp, s, sum;
+    int i, bpp;
+    uint64_t s, sum;
     ImagingSectionCookie cookie;
 
     if (!state->state) {
@@ -350,7 +351,7 @@ ImagingZipEncode(Imaging im, ImagingCodecState state, UINT8 *buf, int bytes) {
 /* Cleanup                                                              */
 /* -------------------------------------------------------------------- */
 
-int
+void
 ImagingZipEncodeCleanup(ImagingCodecState state) {
     ZIPSTATE *context = (ZIPSTATE *)state->context;
 
@@ -358,8 +359,6 @@ ImagingZipEncodeCleanup(ImagingCodecState state) {
         free(context->dictionary);
         context->dictionary = NULL;
     }
-
-    return -1;
 }
 
 const char *

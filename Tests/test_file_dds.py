@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from io import BytesIO
-from pathlib import Path
 
 import pytest
 
@@ -16,6 +15,10 @@ from .helper import (
     assert_image_similar_tofile,
     hopper,
 )
+
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from pathlib import Path
 
 TEST_FILE_DXT1 = "Tests/images/dxt1-rgb-4bbp-noalpha_MipMaps-1.dds"
 TEST_FILE_DXT3 = "Tests/images/dxt3-argb-8bbp-explicitalpha_MipMaps-1.dds"
@@ -220,6 +223,9 @@ def test_dx10_bc6h(image_path: str) -> None:
 
         assert_image_equal_tofile(im, image_path.replace(".dds", ".png"))
 
+        padding = im.tobytes("raw", "RGBX")[3::4]
+        assert padding == b"\0" * len(padding)
+
 
 def test_dx10_bc7() -> None:
     """Check DX10 images can be opened"""
@@ -377,6 +383,9 @@ def test_dxt5_colorblock_alpha_issue_4142() -> None:
 
 def test_palette() -> None:
     with Image.open("Tests/images/palette.dds") as im:
+        assert im.palette is not None
+        assert len(im.palette.tobytes()) == 1024
+
         assert_image_equal_tofile(im, "Tests/images/transparent.gif")
 
 
@@ -540,3 +549,25 @@ def test_save_large_file(tmp_path: Path, pixel_format: str, mode: str) -> None:
     im = hopper(mode).resize((440, 440))
     # should not error in valgrind
     im.save(tmp_path / "img.dds", pixel_format=pixel_format)
+
+
+@pytest.mark.parametrize(
+    "test_file",
+    [
+        "Tests/images/timeout-755a4d204f4208e3597ac3391edebee196462bd0.dds",
+        "Tests/images/timeout-52d106579505547091ef69b58341351a37c23e31.dds",
+        "Tests/images/timeout-c60a3d7314213624607bfb3e38d551a8b24a7435.dds",
+    ],
+)
+def test_not_enough_image_data(test_file: str) -> None:
+    with Image.open(test_file) as im:
+        with pytest.raises(OSError, match="Truncated File Read"):
+            im.load()
+
+
+def test_unsupported_bitcount_0() -> None:
+    with Image.open(
+        "Tests/images/timeout-041dd17dfde800360a47a172269df127af138c6b.dds"
+    ) as im:
+        with pytest.raises(OSError, match="Unsupported bitcount 0"):
+            im.load()

@@ -75,6 +75,12 @@ combinations that are not listed above, use a sequence of Image objects.
 You can read the mode of an image through the :py:attr:`~PIL.Image.Image.mode`
 attribute. This is a string containing one of the above values.
 
+If an operation does not support a particular mode, you can
+:py:meth:`~PIL.Image.Image.convert` it, but not all conversions are lossless.
+For example, converting a palette image (``P``) to a grayscale image (``L``)
+will lose all colour, and converting an image with floating point pixels
+(``F``) to an image with signed integer pixels (``I``) will lose precision.
+
 Size
 ----
 
@@ -94,6 +100,16 @@ corners; the centre of a pixel addressed as (0, 0) actually lies at (0.5, 0.5).
 Coordinates are usually passed to the library as 2-tuples (x, y). Rectangles
 are represented as 4-tuples, (x1, y1, x2, y2), with the upper left corner given
 first.
+
+Since Pillow 5.4.0, individual image pixels can be accessed using negative indexes.
+For example, to get or set the farthest pixel in the lower right of an image::
+
+    >>> from PIL import Image
+    >>> im = Image.new("RGB", (10, 10), (255, 0, 0))
+    >>> px = im.load()
+    >>> px[-1, -1]
+    (255, 0, 0)
+    >>> px[-1, -1] = (0, 0, 0)
 
 Palette
 -------
@@ -173,9 +189,9 @@ pixel, the Python Imaging Library provides different resampling *filters*.
 .. data:: Resampling.BOX
     :noindex:
 
-    Each pixel of source image contributes to one pixel of the
+    Each pixel of the source image contributes to one pixel of the
     destination image with identical weights.
-    For upscaling is equivalent of :data:`Resampling.NEAREST`.
+    For upscaling, this is equivalent to :data:`Resampling.NEAREST`.
     This filter can only be used with the :py:meth:`~PIL.Image.Image.resize`
     and :py:meth:`~PIL.Image.Image.thumbnail` methods.
 
@@ -184,7 +200,7 @@ pixel, the Python Imaging Library provides different resampling *filters*.
 .. data:: Resampling.BILINEAR
     :noindex:
 
-    For resize calculate the output pixel value using linear interpolation
+    For resize, calculate the output pixel value using linear interpolation
     on all pixels that may contribute to the output value.
     For other transformations linear interpolation over a 2x2 environment
     in the input image is used.
@@ -202,7 +218,7 @@ pixel, the Python Imaging Library provides different resampling *filters*.
 .. data:: Resampling.BICUBIC
     :noindex:
 
-    For resize calculate the output pixel value using cubic interpolation
+    For resize, calculate the output pixel value using cubic interpolation
     on all pixels that may contribute to the output value.
     For other transformations cubic interpolation over a 4x4 environment
     in the input image is used.
@@ -217,6 +233,27 @@ pixel, the Python Imaging Library provides different resampling *filters*.
 
     .. versionadded:: 1.1.3
 
+.. data:: Resampling.MKS2013
+    :noindex:
+
+    Calculate the output pixel value using the Magic Kernel Sharp 2013 filter
+    (a quadratic B-spline composed with a sharpening kernel) on all pixels that
+    may contribute to the output value. This filter can only be used with the
+    :py:meth:`~PIL.Image.Image.resize` and :py:meth:`~PIL.Image.Image.thumbnail`
+    methods.
+
+    .. versionadded:: 13.0.0
+
+.. data:: Resampling.MKS2021
+    :noindex:
+
+    Calculate the output pixel value using the Magic Kernel Sharp 2021 filter
+    (a quadratic B-spline composed with a sharpening kernel) on all pixels that
+    may contribute to the output value. This filter can only be used with the
+    :py:meth:`~PIL.Image.Image.resize` and :py:meth:`~PIL.Image.Image.thumbnail`
+    methods.
+
+    .. versionadded:: 13.0.0
 
 Filters comparison table
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -236,4 +273,8 @@ Filters comparison table
 |:data:`Resampling.BICUBIC` | ⭐⭐⭐      | ⭐⭐⭐    | ⭐⭐        |
 +---------------------------+-------------+-----------+-------------+
 |:data:`Resampling.LANCZOS` | ⭐⭐⭐⭐    | ⭐⭐⭐⭐  | ⭐          |
++---------------------------+-------------+-----------+-------------+
+|:data:`Resampling.MKS2013` | ⭐⭐⭐⭐    | ⭐⭐⭐⭐  | ⭐          |
++---------------------------+-------------+-----------+-------------+
+|:data:`Resampling.MKS2021` | ⭐⭐⭐⭐⭐  | ⭐⭐⭐⭐⭐| ⭐          |
 +---------------------------+-------------+-----------+-------------+

@@ -26,6 +26,11 @@ def get_version() -> str:
     return version_file.read_text(encoding="utf-8").split('"')[1]
 
 
+def load_dep_versions() -> dict[str, str]:
+    deps_file = Path(__file__).parent / "dependencies.json"
+    return json.loads(deps_file.read_text(encoding="utf-8"))
+
+
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -54,10 +59,11 @@ def upstream_diff_b64(
 
 def generate(version: str) -> dict:
     serial = str(uuid.uuid4())
-    now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     purl = f"pkg:pypi/pillow@{version}"
     root = Path(__file__).parent.parent
     thirdparty = root / "src" / "thirdparty"
+    versions = load_dep_versions()
 
     metadata_component = {
         "bom-ref": purl,
@@ -68,7 +74,7 @@ def generate(version: str) -> dict:
         "licenses": [{"license": {"id": "MIT-CMU"}}],
         "purl": purl,
         "externalReferences": [
-            {"type": "website", "url": "https://python-pillow.github.io"},
+            {"type": "website", "url": "https://python-pillow.org"},
             {"type": "vcs", "url": "https://github.com/python-pillow/Pillow"},
             {"type": "documentation", "url": "https://pillow.readthedocs.io"},
             {
@@ -79,18 +85,20 @@ def generate(version: str) -> dict:
     }
 
     c_extensions = [
+        ("PIL._avif", "AVIF image format extension"),
         (
             "PIL._imaging",
-            "Core image processing extension "
-            "(decode, encode, map, display, outline, path, libImaging)",
+            (
+                "Core image processing extension "
+                "(decode, encode, map, display, outline, path, libImaging)"
+            ),
         ),
-        ("PIL._imagingft", "FreeType font rendering extension"),
         ("PIL._imagingcms", "LittleCMS2 colour management extension"),
-        ("PIL._webp", "WebP image format extension"),
-        ("PIL._avif", "AVIF image format extension"),
-        ("PIL._imagingtk", "Tk/Tcl display extension"),
+        ("PIL._imagingft", "FreeType font rendering extension"),
         ("PIL._imagingmath", "Image math operations extension"),
         ("PIL._imagingmorph", "Image morphology extension"),
+        ("PIL._imagingtk", "Tk/Tcl display extension"),
+        ("PIL._webp", "WebP image format extension"),
     ]
 
     ext_components = [
@@ -108,90 +116,6 @@ def generate(version: str) -> dict:
 
     vendored_components = [
         {
-            "bom-ref": f"{purl}#thirdparty/raqm",
-            "type": "library",
-            "name": "raqm",
-            "version": "0.10.5",
-            "description": "Complex text layout library "
-            "(vendored in src/thirdparty/raqm/)",
-            "licenses": [{"license": {"id": "MIT"}}],
-            "hashes": [
-                {
-                    "alg": "SHA-256",
-                    "content": sha256_file(thirdparty / "raqm" / "raqm.c"),
-                }
-            ],
-            "pedigree": {
-                "ancestors": [
-                    {
-                        "bom-ref": "pkg:github/HOST-Oman/libraqm@0.10.5#upstream",
-                        "type": "library",
-                        "name": "raqm",
-                        "version": "0.10.5",
-                        "purl": "pkg:github/HOST-Oman/libraqm@0.10.5",
-                        "externalReferences": [
-                            {
-                                "type": "distribution",
-                                "url": "https://github.com/HOST-Oman/libraqm/releases/tag/v0.10.5",
-                            }
-                        ],
-                    }
-                ],
-                "patches": [
-                    {
-                        "type": "unofficial",
-                        "diff": {
-                            "text": {
-                                # raqm-version.h.in → raqm-version.h:
-                                # template @RAQM_VERSION_*@ placeholders replaced
-                                # with literal 0.10.5 values; filename changed to
-                                # drop the .in suffix; minor indentation fix.
-                                "content": upstream_diff_b64(
-                                    "https://raw.githubusercontent.com/HOST-Oman/libraqm/v0.10.5/src/raqm-version.h.in",
-                                    b"src/raqm-version.h.in",
-                                    thirdparty / "raqm" / "raqm-version.h",
-                                    b"src/raqm-version.h",
-                                ),
-                                "encoding": "base64",
-                            }
-                        },
-                    },
-                    {
-                        "type": "unofficial",
-                        "diff": {
-                            "text": {
-                                # raqm.c: wrap the <fribidi.h> include in an
-                                # #ifdef HAVE_FRIBIDI_SYSTEM guard so that when
-                                # building without a system FriBiDi Pillow's own
-                                # fribidi-shim is used instead.
-                                "content": upstream_diff_b64(
-                                    "https://raw.githubusercontent.com/HOST-Oman/libraqm/v0.10.5/src/raqm.c",
-                                    b"src/raqm.c",
-                                    thirdparty / "raqm" / "raqm.c",
-                                    b"src/raqm.c",
-                                ),
-                                "encoding": "base64",
-                            }
-                        },
-                    },
-                ],
-                "notes": (
-                    "Vendored from upstream HOST-Oman/libraqm v0.10.5 with two "
-                    "Pillow-specific modifications: (1) raqm-version.h.in was "
-                    "pre-processed into raqm-version.h with version placeholders "
-                    "replaced by literal values; (2) raqm.c wraps the <fribidi.h> "
-                    "include in an #ifdef HAVE_FRIBIDI_SYSTEM guard so Pillow's "
-                    "bundled fribidi-shim is used when a system FriBiDi is absent."
-                ),
-            },
-            "externalReferences": [
-                {
-                    "type": "vcs",
-                    "url": "https://github.com/python-pillow/Pillow/tree/main/src/thirdparty/raqm",
-                },
-            ],
-        },
-        {
             "bom-ref": f"{purl}#thirdparty/fribidi-shim",
             "type": "library",
             "name": "fribidi-shim",
@@ -199,7 +123,7 @@ def generate(version: str) -> dict:
             "description": "FriBiDi runtime-loading shim "
             "(vendored in src/thirdparty/fribidi-shim/); "
             "loads libfribidi dynamically",
-            "licenses": [{"license": {"id": "LGPL-2.1-or-later"}}],
+            "licenses": [{"license": {"id": "MIT-CMU"}}],
             "hashes": [
                 {
                     "alg": "SHA-256",
@@ -207,7 +131,10 @@ def generate(version: str) -> dict:
                 }
             ],
             "pedigree": {
-                "notes": "Pillow-authored shim; not taken from an upstream project."
+                "notes": "Pillow-authored shim; not taken from an upstream project. "
+                "fribidi.h declares the subset of FriBiDi's public API types, "
+                "constants and function signatures needed to load libfribidi "
+                "at runtime. No FriBiDi implementation code is included."
             },
             "externalReferences": [
                 {"type": "website", "url": "https://github.com/fribidi/fribidi"},
@@ -236,60 +163,98 @@ def generate(version: str) -> dict:
                 },
             ],
         },
+        {
+            "bom-ref": f"{purl}#thirdparty/raqm",
+            "type": "library",
+            "name": "raqm",
+            "version": "0.11.0",
+            "description": "Complex text layout library "
+            "(vendored in src/thirdparty/raqm/)",
+            "licenses": [{"license": {"id": "MIT"}}],
+            "hashes": [
+                {
+                    "alg": "SHA-256",
+                    "content": sha256_file(thirdparty / "raqm" / "raqm.c"),
+                }
+            ],
+            "pedigree": {
+                "ancestors": [
+                    {
+                        "bom-ref": "pkg:github/HOST-Oman/libraqm@0.11.0#upstream",
+                        "type": "library",
+                        "name": "raqm",
+                        "version": "0.11.0",
+                        "purl": "pkg:github/HOST-Oman/libraqm@0.11.0",
+                        "externalReferences": [
+                            {
+                                "type": "distribution",
+                                "url": "https://github.com/HOST-Oman/libraqm/releases/tag/v0.11.0",
+                            }
+                        ],
+                    }
+                ],
+                "patches": [
+                    {
+                        "type": "unofficial",
+                        "diff": {
+                            "text": {
+                                # raqm-version.h.in → raqm-version.h:
+                                # template @RAQM_VERSION_*@ placeholders replaced
+                                # with literal 0.11.0 values; filename changed to
+                                # drop the .in suffix.
+                                "content": upstream_diff_b64(
+                                    "https://raw.githubusercontent.com/HOST-Oman/libraqm/v0.11.0/src/raqm-version.h.in",
+                                    b"src/raqm-version.h.in",
+                                    thirdparty / "raqm" / "raqm-version.h",
+                                    b"src/raqm-version.h",
+                                ),
+                                "encoding": "base64",
+                            }
+                        },
+                    },
+                    {
+                        "type": "unofficial",
+                        "diff": {
+                            "text": {
+                                # raqm.c: wrap the <fribidi.h> include in an
+                                # #ifdef HAVE_FRIBIDI_SYSTEM guard so that when
+                                # building without a system FriBiDi Pillow's own
+                                # fribidi-shim is used instead.
+                                "content": upstream_diff_b64(
+                                    "https://raw.githubusercontent.com/HOST-Oman/libraqm/v0.11.0/src/raqm.c",
+                                    b"src/raqm.c",
+                                    thirdparty / "raqm" / "raqm.c",
+                                    b"src/raqm.c",
+                                ),
+                                "encoding": "base64",
+                            }
+                        },
+                    },
+                ],
+                "notes": (
+                    "Vendored from upstream HOST-Oman/libraqm v0.11.0 with two "
+                    "Pillow-specific modifications: (1) raqm-version.h.in was "
+                    "pre-processed into raqm-version.h with version placeholders "
+                    "replaced by literal values; (2) raqm.c wraps the <fribidi.h> "
+                    "include in an #ifdef HAVE_FRIBIDI_SYSTEM guard so Pillow's "
+                    "bundled fribidi-shim is used when a system FriBiDi is absent."
+                ),
+            },
+            "externalReferences": [
+                {
+                    "type": "vcs",
+                    "url": "https://github.com/python-pillow/Pillow/tree/main/src/thirdparty/raqm",
+                },
+            ],
+        },
     ]
 
     native_deps = [
         {
-            "bom-ref": "pkg:generic/libjpeg",
-            "type": "library",
-            "name": "libjpeg / libjpeg-turbo",
-            "description": "JPEG codec (required by default; disable with "
-            "-C jpeg=disable). Tested with libjpeg 6b/8/9-9d "
-            "and libjpeg-turbo 2-3.",
-            "licenses": [
-                {"license": {"id": "IJG"}},
-                {"license": {"id": "BSD-3-Clause"}},
-            ],
-            "externalReferences": [
-                {"type": "website", "url": "https://ijg.org"},
-                {"type": "website", "url": "https://libjpeg-turbo.org"},
-                {
-                    "type": "distribution",
-                    "url": "https://github.com/libjpeg-turbo/libjpeg-turbo/releases",
-                },
-            ],
-        },
-        {
-            "bom-ref": "pkg:generic/zlib",
-            "type": "library",
-            "name": "zlib",
-            "description": "Deflate/PNG compression (required by default; "
-            "disable with -C zlib=disable).",
-            "licenses": [{"license": {"id": "Zlib"}}],
-            "externalReferences": [
-                {"type": "website", "url": "https://zlib.net"},
-                {"type": "distribution", "url": "https://zlib.net"},
-            ],
-        },
-        {
-            "bom-ref": "pkg:generic/libtiff",
-            "type": "library",
-            "name": "libtiff",
-            "scope": "optional",
-            "description": "TIFF codec (optional). Tested with libtiff 4.0-4.7.1.",
-            "licenses": [{"license": {"id": "libtiff"}}],
-            "externalReferences": [
-                {"type": "website", "url": "https://libtiff.gitlab.io/libtiff/"},
-                {
-                    "type": "distribution",
-                    "url": "https://download.osgeo.org/libtiff/",
-                },
-            ],
-        },
-        {
             "bom-ref": "pkg:generic/freetype2",
             "type": "library",
             "name": "FreeType",
+            "version": versions["freetype"].replace("-", "."),
             "scope": "optional",
             "description": "Font rendering (optional, used by PIL._imagingft). "
             "Required for text/font support.",
@@ -303,18 +268,159 @@ def generate(version: str) -> dict:
             ],
         },
         {
-            "bom-ref": "pkg:generic/littlecms2",
+            "bom-ref": "pkg:generic/brotli",
             "type": "library",
-            "name": "Little CMS 2",
+            "name": "Brotli",
+            "version": versions["brotli"],
             "scope": "optional",
-            "description": "Colour management (optional, used by PIL._imagingcms). "
-            "Tested with lcms2 2.7-2.18.",
+            "description": "Lossless compression algorithm. "
+            "Required for WOFF2 font support.",
             "licenses": [{"license": {"id": "MIT"}}],
             "externalReferences": [
-                {"type": "website", "url": "https://www.littlecms.com"},
+                {"type": "website", "url": "https://brotli.org"},
                 {
                     "type": "distribution",
-                    "url": "https://github.com/mm2/Little-CMS/releases",
+                    "url": "https://github.com/google/brotli/releases",
+                },
+            ],
+        },
+        {
+            "bom-ref": "pkg:generic/fribidi",
+            "type": "library",
+            "name": "FriBiDi",
+            "version": versions["fribidi"],
+            "scope": "optional",
+            "description": "Unicode bidi algorithm library (optional, "
+            "loaded at runtime by fribidi-shim).",
+            "licenses": [{"license": {"id": "LGPL-2.1-or-later"}}],
+            "externalReferences": [
+                {"type": "website", "url": "https://github.com/fribidi/fribidi"},
+                {
+                    "type": "distribution",
+                    "url": "https://github.com/fribidi/fribidi/releases",
+                },
+            ],
+        },
+        {
+            "bom-ref": "pkg:generic/harfbuzz",
+            "type": "library",
+            "name": "HarfBuzz",
+            "version": versions["harfbuzz"],
+            "scope": "optional",
+            "description": "Text shaping (optional, required by libraqm "
+            "for complex text layout).",
+            "licenses": [{"license": {"id": "MIT"}}],
+            "externalReferences": [
+                {"type": "website", "url": "https://harfbuzz.github.io"},
+                {
+                    "type": "distribution",
+                    "url": "https://github.com/harfbuzz/harfbuzz/releases",
+                },
+            ],
+        },
+        {
+            "bom-ref": "pkg:generic/libavif",
+            "type": "library",
+            "name": "libavif",
+            "version": versions["libavif"],
+            "scope": "optional",
+            "description": "AVIF codec (optional, used by PIL._avif).",
+            "licenses": [{"license": {"id": "BSD-2-Clause"}}],
+            "pedigree": {
+                "ancestors": [
+                    {
+                        "bom-ref": "pkg:github/aomediacodec/libavif@1.4.2#upstream",
+                        "type": "library",
+                        "name": "libavif",
+                        "version": "1.4.2",
+                        "purl": "pkg:github/aomediacodec/libavif@1.4.2",
+                        "externalReferences": [
+                            {
+                                "type": "distribution",
+                                "url": "https://github.com/AOMediaCodec/libavif/releases/tag/v1.4.2",
+                            }
+                        ],
+                    }
+                ],
+                "patches": [
+                    {
+                        "type": "unofficial",
+                        "diff": {
+                            "text": {
+                                # partially apply https://github.com/AOMediaCodec/libavif/pull/3460/changes/c81f7ecfa0f13786b15336961686300781144beb
+                                "content": base64.b64encode(
+                                    (
+                                        Path(__file__).parent.parent
+                                        / "patches"
+                                        / "libavif.patch"
+                                    ).read_bytes()
+                                ).decode(),
+                                "encoding": "base64",
+                            }
+                        },
+                    },
+                ],
+                "notes": (
+                    "Vendored from upstream libavif 1.4.2, "
+                    "patched to use dav1d 1.5.5 on Windows."
+                ),
+            },
+            "externalReferences": [
+                {"type": "website", "url": "https://github.com/AOMediaCodec/libavif"},
+                {
+                    "type": "distribution",
+                    "url": "https://github.com/AOMediaCodec/libavif/releases",
+                },
+            ],
+        },
+        {
+            "bom-ref": "pkg:generic/libimagequant",
+            "type": "library",
+            "name": "libimagequant",
+            "version": versions["libimagequant"],
+            "scope": "optional",
+            "description": "Improved colour quantization (optional).",
+            "licenses": [{"license": {"id": "GPL-3.0-or-later"}}],
+            "externalReferences": [
+                {"type": "website", "url": "https://pngquant.org/lib/"},
+                {
+                    "type": "distribution",
+                    "url": "https://github.com/ImageOptim/libimagequant/tags",
+                },
+            ],
+        },
+        {
+            "bom-ref": "pkg:generic/libjpeg",
+            "type": "library",
+            "name": "libjpeg-turbo",
+            "version": versions["jpegturbo"],
+            "description": "JPEG codec, a libjpeg-compatible replacement for libjpeg "
+            "(required by default; disable with -C jpeg=disable).",
+            "licenses": [
+                {"license": {"id": "IJG"}},
+                {"license": {"id": "BSD-3-Clause"}},
+            ],
+            "externalReferences": [
+                {"type": "website", "url": "https://libjpeg-turbo.org"},
+                {
+                    "type": "distribution",
+                    "url": "https://github.com/libjpeg-turbo/libjpeg-turbo/releases",
+                },
+            ],
+        },
+        {
+            "bom-ref": "pkg:generic/libtiff",
+            "type": "library",
+            "name": "libtiff",
+            "version": versions["tiff"],
+            "scope": "optional",
+            "description": "TIFF codec (optional).",
+            "licenses": [{"license": {"id": "libtiff"}}],
+            "externalReferences": [
+                {"type": "website", "url": "https://libtiff.gitlab.io/libtiff/"},
+                {
+                    "type": "distribution",
+                    "url": "https://download.osgeo.org/libtiff/",
                 },
             ],
         },
@@ -322,6 +428,7 @@ def generate(version: str) -> dict:
             "bom-ref": "pkg:generic/libwebp",
             "type": "library",
             "name": "libwebp",
+            "version": versions["libwebp"],
             "scope": "optional",
             "description": "WebP codec (optional, used by PIL._webp).",
             "licenses": [{"license": {"id": "BSD-3-Clause"}}],
@@ -337,89 +444,10 @@ def generate(version: str) -> dict:
             ],
         },
         {
-            "bom-ref": "pkg:generic/openjpeg",
-            "type": "library",
-            "name": "OpenJPEG",
-            "scope": "optional",
-            "description": "JPEG 2000 codec (optional). "
-            "Tested with openjpeg 2.0.0-2.5.4.",
-            "licenses": [{"license": {"id": "BSD-2-Clause"}}],
-            "externalReferences": [
-                {"type": "website", "url": "https://www.openjpeg.org"},
-                {
-                    "type": "distribution",
-                    "url": "https://github.com/uclouvain/openjpeg/releases",
-                },
-            ],
-        },
-        {
-            "bom-ref": "pkg:generic/libavif",
-            "type": "library",
-            "name": "libavif",
-            "scope": "optional",
-            "description": "AVIF codec (optional, used by PIL._avif). "
-            "Requires libavif >= 1.0.0.",
-            "licenses": [{"license": {"id": "BSD-2-Clause"}}],
-            "externalReferences": [
-                {"type": "website", "url": "https://github.com/AOMediaCodec/libavif"},
-                {
-                    "type": "distribution",
-                    "url": "https://github.com/AOMediaCodec/libavif/releases",
-                },
-            ],
-        },
-        {
-            "bom-ref": "pkg:generic/harfbuzz",
-            "type": "library",
-            "name": "HarfBuzz",
-            "scope": "optional",
-            "description": "Text shaping (optional, required by libraqm "
-            "for complex text layout).",
-            "licenses": [{"license": {"id": "MIT"}}],
-            "externalReferences": [
-                {"type": "website", "url": "https://harfbuzz.github.io"},
-                {
-                    "type": "distribution",
-                    "url": "https://github.com/harfbuzz/harfbuzz/releases",
-                },
-            ],
-        },
-        {
-            "bom-ref": "pkg:generic/fribidi",
-            "type": "library",
-            "name": "FriBiDi",
-            "scope": "optional",
-            "description": "Unicode bidi algorithm library (optional, "
-            "loaded at runtime by fribidi-shim).",
-            "licenses": [{"license": {"id": "LGPL-2.1-or-later"}}],
-            "externalReferences": [
-                {"type": "website", "url": "https://github.com/fribidi/fribidi"},
-                {
-                    "type": "distribution",
-                    "url": "https://github.com/fribidi/fribidi/releases",
-                },
-            ],
-        },
-        {
-            "bom-ref": "pkg:generic/libimagequant",
-            "type": "library",
-            "name": "libimagequant",
-            "scope": "optional",
-            "description": "Improved colour quantization (optional). "
-            "Tested with 2.6-4.4.1.",
-            "licenses": [{"license": {"id": "GPL-3.0-or-later"}}],
-            "externalReferences": [
-                {"type": "website", "url": "https://pngquant.org/lib/"},
-                {
-                    "type": "distribution",
-                    "url": "https://github.com/ImageOptim/libimagequant/tags",
-                },
-            ],
-        },
-        {
             "bom-ref": "pkg:generic/libxcb",
             "type": "library",
             "name": "libxcb",
+            "version": versions["libxcb"],
             "scope": "optional",
             "description": "X11 screen-grab support (optional, "
             "used by PIL._imaging on macOS and Linux).",
@@ -429,6 +457,77 @@ def generate(version: str) -> dict:
                 {
                     "type": "distribution",
                     "url": "https://xcb.freedesktop.org/dist/",
+                },
+            ],
+        },
+        {
+            "bom-ref": "pkg:generic/littlecms2",
+            "type": "library",
+            "name": "Little CMS 2",
+            "version": versions["lcms2"],
+            "scope": "optional",
+            "description": "Colour management (optional, used by PIL._imagingcms).",
+            "licenses": [{"license": {"id": "MIT"}}],
+            "externalReferences": [
+                {"type": "website", "url": "https://www.littlecms.com"},
+                {
+                    "type": "distribution",
+                    "url": "https://github.com/mm2/Little-CMS/releases",
+                },
+            ],
+        },
+        {
+            "bom-ref": "pkg:generic/openjpeg",
+            "type": "library",
+            "name": "OpenJPEG",
+            "version": versions["openjpeg"],
+            "scope": "optional",
+            "description": "JPEG 2000 codec (optional).",
+            "licenses": [{"license": {"id": "BSD-2-Clause"}}],
+            "pedigree": {
+                "ancestors": [
+                    {
+                        "bom-ref": "pkg:generic/openjpeg@2.5.4#upstream",
+                        "type": "library",
+                        "name": "OpenJPEG",
+                        "version": "2.5.4",
+                        "purl": "pkg:generic/openjpeg@2.5.4",
+                        "externalReferences": [
+                            {
+                                "type": "distribution",
+                                "url": "https://github.com/uclouvain/openjpeg/releases/tag/v2.5.4",
+                            }
+                        ],
+                    }
+                ],
+                "patches": [
+                    {
+                        "type": "cherry-pick",
+                        "diff": {
+                            "text": {
+                                # apply https://github.com/uclouvain/openjpeg/commit/91d08b11a72764f6d199f32fa0c1b1abd4edc2ad
+                                "content": base64.b64encode(
+                                    (
+                                        Path(__file__).parent.parent
+                                        / "patches"
+                                        / "v2.5.4.tar.gz.patch"
+                                    ).read_bytes()
+                                ).decode(),
+                                "encoding": "base64",
+                            }
+                        },
+                    },
+                ],
+                "notes": (
+                    "Vendored from upstream openjpeg 2.5.4 with commits from master "
+                    "cherry-picked to fix OSV-2025-219 and CVE-2026-6192."
+                ),
+            },
+            "externalReferences": [
+                {"type": "website", "url": "https://www.openjpeg.org"},
+                {
+                    "type": "distribution",
+                    "url": "https://github.com/uclouvain/openjpeg/releases",
                 },
             ],
         },
@@ -447,6 +546,26 @@ def generate(version: str) -> dict:
                 },
             ],
         },
+        {
+            "bom-ref": "pkg:generic/zlib",
+            "type": "library",
+            "name": "zlib-ng",
+            "version": versions["zlib-ng"],
+            "description": "Deflate/PNG compression, built in zlib-compatible mode "
+            "as a replacement for zlib (required by default; "
+            "disable with -C zlib=disable).",
+            "licenses": [{"license": {"id": "Zlib"}}],
+            "externalReferences": [
+                {
+                    "type": "website",
+                    "url": "https://github.com/zlib-ng/zlib-ng",
+                },
+                {
+                    "type": "distribution",
+                    "url": "https://github.com/zlib-ng/zlib-ng/releases",
+                },
+            ],
+        },
     ]
 
     dependencies = [
@@ -455,24 +574,18 @@ def generate(version: str) -> dict:
             "dependsOn": [e["bom-ref"] for e in ext_components],
         },
         {
-            "ref": f"{purl}#c-ext/PIL._imaging",
-            "dependsOn": [
-                "pkg:generic/libjpeg",
-                "pkg:generic/zlib",
-                "pkg:generic/libtiff",
-                "pkg:generic/openjpeg",
-                "pkg:generic/libimagequant",
-                "pkg:generic/libxcb",
-            ],
+            "ref": f"{purl}#c-ext/PIL._avif",
+            "dependsOn": ["pkg:generic/libavif"],
         },
         {
-            "ref": f"{purl}#c-ext/PIL._imagingft",
+            "ref": f"{purl}#c-ext/PIL._imaging",
             "dependsOn": [
-                "pkg:generic/freetype2",
-                f"{purl}#thirdparty/raqm",
-                f"{purl}#thirdparty/fribidi-shim",
-                "pkg:generic/harfbuzz",
-                "pkg:generic/fribidi",
+                "pkg:generic/libimagequant",
+                "pkg:generic/libjpeg",
+                "pkg:generic/libtiff",
+                "pkg:generic/libxcb",
+                "pkg:generic/openjpeg",
+                "pkg:generic/zlib",
             ],
         },
         {
@@ -480,18 +593,24 @@ def generate(version: str) -> dict:
             "dependsOn": ["pkg:generic/littlecms2"],
         },
         {
+            "ref": f"{purl}#c-ext/PIL._imagingft",
+            "dependsOn": [
+                "pkg:generic/freetype2",
+                "pkg:generic/fribidi",
+                "pkg:generic/harfbuzz",
+                f"{purl}#thirdparty/fribidi-shim",
+                f"{purl}#thirdparty/raqm",
+            ],
+        },
+        {
             "ref": f"{purl}#c-ext/PIL._webp",
             "dependsOn": ["pkg:generic/libwebp"],
         },
         {
-            "ref": f"{purl}#c-ext/PIL._avif",
-            "dependsOn": ["pkg:generic/libavif"],
-        },
-        {
             "ref": f"{purl}#thirdparty/raqm",
             "dependsOn": [
-                f"{purl}#thirdparty/fribidi-shim",
                 "pkg:generic/harfbuzz",
+                f"{purl}#thirdparty/fribidi-shim",
             ],
         },
     ]

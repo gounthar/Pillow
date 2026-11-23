@@ -15,13 +15,15 @@
 #
 from __future__ import annotations
 
+__lazy_modules__ = {"PIL._binary"}
+
 import re
 
 from . import Image, ImageFile, ImagePalette
 from ._binary import o8
 
 # XPM header
-xpm_head = re.compile(b'"([0-9]*) ([0-9]*) ([0-9]*) ([0-9]*)')
+xpm_head = re.compile(rb'"([0-9]*)\s+([0-9]*)\s+([0-9]*)\s+([0-9]*)')
 
 
 def _accept(prefix: bytes) -> bool:
@@ -61,6 +63,7 @@ class XpmImageFile(ImageFile.ImageFile):
         # load palette description
 
         palette = {}
+        transparent_key = None
 
         for _ in range(palette_length):
             line = self.fp.readline().rstrip()
@@ -72,14 +75,18 @@ class XpmImageFile(ImageFile.ImageFile):
                 if s[i] == b"c":
                     # process colour key
                     rgb = s[i + 1]
-                    if rgb == b"None":
-                        self.info["transparency"] = c
-                    elif rgb.startswith(b"#"):
-                        rgb_int = int(rgb[1:], 16)
-                        palette[c] = (
-                            o8((rgb_int >> 16) & 255)
-                            + o8((rgb_int >> 8) & 255)
-                            + o8(rgb_int & 255)
+                    if rgb.lower() == b"none":
+                        transparent_key = c
+                        palette[c] = b"\0\0\0"
+                    elif rgb.startswith(b"#") and len(rgb) in {4, 7, 10, 13}:
+                        # #RGB, #RRGGBB, #RRRGGGBBB or #RRRRGGGGBBBB
+                        # libXpm parses colours with XParseColor,
+                        # which uses the digits as the most significant bits
+                        # of each channel instead of scaling them
+                        digits = len(rgb) // 3
+                        palette[c] = bytes(
+                            int(rgb[i : i + digits], 16) << (4 - digits) * 4 >> 8
+                            for i in range(1, len(rgb), digits)
                         )
                     else:
                         # unknown colour
@@ -94,14 +101,24 @@ class XpmImageFile(ImageFile.ImageFile):
 
         args: tuple[int, dict[bytes, bytes] | tuple[bytes, ...]]
         if palette_length > 256:
-            self._mode = "RGB"
+            if transparent_key is not None:
+                self._mode = "RGBA"
+                palette = {
+                    c: rgb + (b"\x00" if c == transparent_key else b"\xff")
+                    for c, rgb in palette.items()
+                }
+            else:
+                self._mode = "RGB"
             args = (bpp, palette)
         else:
             self._mode = "P"
             self.palette = ImagePalette.raw("RGB", b"".join(palette.values()))
-            args = (bpp, tuple(palette.keys()))
+            palette_keys = tuple(palette.keys())
+            args = (bpp, palette_keys)
+            if transparent_key is not None:
+                self.info["transparency"] = palette_keys.index(transparent_key)
 
-        self.tile = [ImageFile._Tile("xpm", (0, 0) + self.size, self.fp.tell(), args)]
+        self.tile = [ImageFile._Tile("xpm", None, self.fp.tell(), args)]
 
     def load_read(self, read_bytes: int) -> bytes:
         #
@@ -118,14 +135,14 @@ class XpmImageFile(ImageFile.ImageFile):
 class XpmDecoder(ImageFile.PyDecoder):
     _pulls_fd = True
 
-    def decode(self, buffer: bytes | Image.SupportsArrayInterface) -> tuple[int, int]:
+    def decode(self, buffer: Image.DecoderInput) -> tuple[int, int]:
         assert self.fd is not None
 
         data = bytearray()
         bpp, palette = self.args
         dest_length = self.state.xsize * self.state.ysize
-        if self.mode == "RGB":
-            dest_length *= 3
+        if self.mode in {"RGB", "RGBA"}:
+            dest_length *= len(self.mode)
         pixel_header = False
         while len(data) < dest_length:
             line = self.fd.readline()
@@ -137,10 +154,14 @@ class XpmDecoder(ImageFile.PyDecoder):
             line = b'"'.join(line.split(b'"')[1:-1])
             for i in range(0, len(line), bpp):
                 key = line[i : i + bpp]
-                if self.mode == "RGB":
-                    data += palette[key]
-                else:
-                    data += o8(palette.index(key))
+                try:
+                    if self.mode in {"RGB", "RGBA"}:
+                        data += palette[key]
+                    else:
+                        data += o8(palette.index(key))
+                except (KeyError, ValueError):
+                    msg = "unknown color"
+                    raise ValueError(msg)
         self.set_as_raw(bytes(data))
         return -1, 0
 

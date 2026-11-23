@@ -233,9 +233,9 @@ RGBA image and also using it as the mask would paste the opaque portion
 of the image but not its transparent background.
 
 The Python Imaging Library also allows you to work with the individual bands of
-an multi-band image, such as an RGB image. The split method creates a set of
-new images, each containing one band from the original multi-band image. The
-merge function takes a mode and a tuple of images, and combines them into a new
+a multi-band image, such as an RGB image. The split method creates a set of new
+images, each containing one band from the original multi-band image. The merge
+function takes a mode and a tuple of images, and combines them into a new
 image. The following sample swaps the three bands of an RGB image:
 
 Splitting and merging bands
@@ -259,7 +259,7 @@ Geometrical transforms
 The :py:class:`PIL.Image.Image` class contains methods to
 :py:meth:`~PIL.Image.Image.resize` and :py:meth:`~PIL.Image.Image.rotate` an
 image. The former takes a tuple giving the new size, the latter the angle in
-degrees counter-clockwise.
+degrees counterclockwise.
 
 Simple geometry transforms
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -267,7 +267,7 @@ Simple geometry transforms
 ::
 
     out = im.resize((128, 128))
-    out = im.rotate(45) # degrees counter-clockwise
+    out = im.rotate(45) # degrees counterclockwise
 
 .. image:: rotated_hopper_90.webp
     :align: center
@@ -371,9 +371,25 @@ Converting between modes
     with Image.open("hopper.ppm") as im:
         im = im.convert("L")
 
-The library supports transformations between each supported mode and the “L”
-and “RGB” modes. To convert between other modes, you may have to use an
-intermediate image (typically an “RGB” image).
+The library supports transformations between each supported mode and the "L"
+and "RGB" modes. To convert between other modes, you may have to use an
+intermediate image (typically an "RGB" image).
+
+Converting and scaling
+^^^^^^^^^^^^^^^^^^^^^^
+
+When converting to a mode with a lower bit depth, Pillow does not automatically
+scale pixel values. For example, converting from "I;16" mode to "L" mode limits
+values to a maximum of 255. You may wish to scale values before converting::
+
+    >>> from PIL import Image
+    >>> im = Image.new("I;16", (1, 1), 51200)
+    >>> im_l = im.convert("L")
+    >>> im_l.getpixel((0, 0))
+    255
+    >>> im_l2 = im.point(lambda value: value / 256).convert("L")
+    >>> im_l2.getpixel((0, 0))
+    200
 
 Image enhancement
 -----------------
@@ -677,7 +693,7 @@ Reading from URL
 
     from PIL import Image
     from urllib.request import urlopen
-    url = "https://python-pillow.github.io/assets/images/pillow-logo.png"
+    url = "https://python-pillow.org/assets/images/pillow-logo.png"
     img = Image.open(urlopen(url))
 
 

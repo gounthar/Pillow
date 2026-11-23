@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from io import BytesIO
+
 import pytest
 
 from PIL import Image
@@ -43,7 +45,49 @@ def test_invalid_file() -> None:
         FpxImagePlugin.FpxImageFile(ole_file)
 
 
-def test_fpx_invalid_number_of_bands() -> None:
+def test_invalid_tile_size() -> None:
+    with open("Tests/images/input_bw_one_band.fpx", "rb") as f:
+        data = bytearray(f.read())
+    data[4204:4212] = b"\x00" * 8
+    b = BytesIO(data)
+    with pytest.raises(ValueError, match="Tile must be 64 pixels by 64 pixels"):
+        Image.open(b)
+
+
+def test_invalid_tile_header_entry_length() -> None:
+    with open("Tests/images/input_bw_one_band.fpx", "rb") as f:
+        data = bytearray(f.read())
+    data[4220:4224] = b"\x01\x00\x00\x00"
+    b = BytesIO(data)
+    with pytest.raises(
+        ValueError, match="Tile header entry length must be at least 16"
+    ):
+        Image.open(b)
+
+
+def test_decompression_bomb() -> None:
+    with open("Tests/images/input_bw_one_band.fpx", "rb") as f:
+        data = bytearray(f.read())
+    data[3220:3224] = b"\x00\x00\x00\x40"
+    b = BytesIO(data)
+    with pytest.raises(Image.DecompressionBombError):
+        Image.open(b)
+
+
+def test_invalid_number_of_bands() -> None:
     with pytest.raises(OSError, match="Invalid number of bands"):
         with Image.open("Tests/images/input_bw_five_bands.fpx"):
             pass
+
+
+def test_oob_write() -> None:
+    with pytest.raises(ValueError, match="Tile must be 64 pixels by 64 pixels"):
+        Image.open("Tests/images/GHSA-5x8w-8jj5-q52h_oob_fpx_write.fpx")
+
+    for img_path in (
+        "Tests/images/GHSA-5x8w-8jj5-q52h_oob64.fpx",
+        "Tests/images/GHSA-5x8w-8jj5-q52h_wide.fpx",
+    ):
+        with Image.open(img_path) as im:
+            with pytest.raises(OSError, match="broken data stream"):
+                im.load()
